@@ -1,0 +1,12 @@
+{
+  "name": "captura-nfse-ambiente-nacional",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:web": "npm --workspace @nfse/web run dev",
+    "dev:agent": "npm --workspace @nfse/agent run dev",
+    "build": "npm run -ws build",
+    "lint": "npm run -ws lint"
+  }
+}
