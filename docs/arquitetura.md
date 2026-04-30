@@ -6,14 +6,21 @@ Entregar um MVP com UX simples para escritórios e agente local para download de
 ## Componentes
 
 1. **Web (Next.js)**
-   - Configuração visual (CNPJ, competência, timeout, retries, concorrência, pasta de saída).
+   - Configuração visual (CNPJ, competência, timeout, retries, concorrência, pasta de saída e certificado).
    - Chama agente local via HTTP.
 
 2. **Agent (Node + Express)**
-   - Exposição de endpoints de saúde, listagem de certificados (mock inicial), e início de captura.
-   - Criação de estrutura de diretórios `AAAA-MM-CNPJ/XML` e `PDF`.
+   - Endpoints:
+     - `GET /` metadados do serviço
+     - `GET /health`
+     - `GET /certificates` (tenta Windows Store, fallback mock)
+     - `POST /capture`
+     - `GET /jobs/:id`
+   - Validações de payload básicas.
+   - Criação da estrutura de diretórios `MM-AAAA-CNPJ/XML` e `PDF` + `manifest.json`.
+   - Geração de XML placeholder para validar pipeline local.
 
 ## Evolução planejada
-- Integrar leitura real de certificados A1.
-- Integrar APIs oficiais NFS-e com mTLS.
-- Implementar fila, retentativas, checkpoint e logs operacionais.
+- Integrar chamadas reais às APIs oficiais NFS-e com mTLS.
+- Substituir placeholder por download real de XML/PDF.
+- Implementar fila persistente, retentativas avançadas, checkpoint e logs operacionais.
