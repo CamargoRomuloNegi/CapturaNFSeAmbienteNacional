@@ -5,6 +5,7 @@ import fsSync from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import https from 'node:https';
+import tls from 'node:tls';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import axios from 'axios';
@@ -15,7 +16,7 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = Number(process.env.PORT || 3333);
-const AGENT_VERSION = '0.5.0';
+const AGENT_VERSION = '0.6.0';
 const jobs = new Map();
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = Number(process.env.NFSE_MIN_INTERVAL_MS || 1500);
 const DEFAULT_PAGE_SIZE = Number(process.env.NFSE_PAGE_SIZE || 50);
@@ -28,24 +29,14 @@ function validateCaptureInput(input) {
   if (!input.cnpj || !/^\d{14}$/.test(String(input.cnpj))) errors.push('cnpj deve conter 14 dígitos numéricos');
   if (!input.periodStart || !/^\d{2}-\d{4}$/.test(String(input.periodStart))) errors.push('periodStart deve estar no formato MM-AAAA');
   if (!input.periodEnd || !/^\d{2}-\d{4}$/.test(String(input.periodEnd))) errors.push('periodEnd deve estar no formato MM-AAAA');
-  if (!input.certFilePath && !input.certificateId) errors.push('informe certFilePath (.pfx/.p12) ou selecione certificateId');
   if (!input.certPassword) errors.push('certPassword é obrigatório');
   return errors;
 }
 
-function parsePeriod(mmYYYY) {
-  const [mm, yyyy] = mmYYYY.split('-').map(Number);
-  return new Date(Date.UTC(yyyy, mm - 1, 1));
-}
-
+function parsePeriod(mmYYYY) { const [mm, yyyy] = mmYYYY.split('-').map(Number); return new Date(Date.UTC(yyyy, mm - 1, 1)); }
 function listPeriods(start, end) {
-  const periods = [];
-  let cursor = parsePeriod(start);
-  const limit = parsePeriod(end);
-  while (cursor <= limit) {
-    periods.push(`${String(cursor.getUTCMonth() + 1).padStart(2, '0')}-${cursor.getUTCFullYear()}`);
-    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
-  }
+  const periods = []; let cursor = parsePeriod(start); const limit = parsePeriod(end);
+  while (cursor <= limit) { periods.push(`${String(cursor.getUTCMonth() + 1).padStart(2, '0')}-${cursor.getUTCFullYear()}`); cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1)); }
   return periods;
 }
 
@@ -55,29 +46,22 @@ async function listWindowsCertificates() {
   const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', ps]);
   const parsed = JSON.parse(stdout || '[]');
   const list = Array.isArray(parsed) ? parsed : [parsed];
-  return {
-    source: 'windows-store',
-    certificates: list.map((c, i) => ({
-      id: c.Thumbprint || `thumb-${i}`,
-      owner: c.Subject || 'Sem Subject',
-      validUntil: c.NotAfter || null,
-      cnpj: extractCnpj(c.Subject || ''),
-      provider: 'Windows-Store'
-    }))
-  };
+  return { source: 'windows-store', certificates: list.map((c, i) => ({ id: c.Thumbprint || `thumb-${i}`, owner: c.Subject || 'Sem Subject', validUntil: c.NotAfter || null, cnpj: extractCnpj(c.Subject || '') })) };
 }
 
 function buildHttpClient(certFilePath, certPassword, timeoutSeconds) {
+  if (!certFilePath) throw new Error('certFilePath é obrigatório para captura online.');
   const pfx = fsSync.readFileSync(certFilePath);
+  try { tls.createSecureContext({ pfx, passphrase: certPassword }); }
+  catch { throw new Error('Falha ao validar certificado/senha. Verifique arquivo .pfx/.p12 e senha.'); }
   const httpsAgent = new https.Agent({ pfx, passphrase: certPassword, keepAlive: true, rejectUnauthorized: true });
   return axios.create({ httpsAgent, timeout: Number(timeoutSeconds || 30) * 1000 });
 }
 
 async function safeRequest(client, config, minMs) {
   await sleep(minMs);
-  try {
-    return await client.request(config);
-  } catch (error) {
+  try { return await client.request(config); }
+  catch (error) {
     const status = error.response?.status;
     if (status === 429 || status >= 500) {
       await sleep(minMs * 2);
@@ -91,30 +75,14 @@ async function runCapture(job) {
   const cfg = job.config;
   const periods = listPeriods(cfg.periodStart, cfg.periodEnd);
   const baseApiUrl = process.env.NFSE_BASE_URL;
-
-  if (!baseApiUrl || !cfg.certFilePath) {
-    for (const period of periods) {
-      const folder = `${period}-${cfg.cnpj}`;
-      const basePath = path.join(cfg.outputRoot, folder);
-      await fs.mkdir(path.join(basePath, 'XML'), { recursive: true });
-      await fs.mkdir(path.join(basePath, 'PDF'), { recursive: true });
-      await fs.writeFile(path.join(basePath, 'manifest.json'), JSON.stringify({
-        updatedAt: new Date().toISOString(),
-        cnpj: cfg.cnpj,
-        competence: period,
-        status: 'completed',
-        mode: 'safe-local',
-        note: 'Sem NFSE_BASE_URL ou certFilePath: execução local para validação de fluxo.'
-      }, null, 2));
-    }
-    return { periods, xml: 0, pdf: 0, mode: 'safe-local' };
-  }
+  if (!baseApiUrl) throw new Error('NFSE_BASE_URL não configurada. Defina a variável de ambiente para captura online.');
 
   const client = buildHttpClient(cfg.certFilePath, cfg.certPassword, cfg.timeoutSeconds);
-  let totalXml = 0;
-  let totalPdf = 0;
+  let totalXml = 0; let totalPdf = 0;
 
   for (const period of periods) {
+    job.status = 'running';
+    job.currentPeriod = period;
     const [month, year] = period.split('-');
     const folder = `${period}-${cfg.cnpj}`;
     const basePath = path.join(cfg.outputRoot, folder);
@@ -125,6 +93,7 @@ async function runCapture(job) {
 
     const listResponse = await safeRequest(client, { method: 'GET', url: `${baseApiUrl}/nfse`, params: { cnpj: cfg.cnpj, year, month, pageSize: DEFAULT_PAGE_SIZE } }, cfg.minRequestIntervalMs);
     const documents = listResponse.data?.documents || [];
+    job.progress = { period, documents: documents.length, downloadedXml: totalXml, downloadedPdf: totalPdf };
 
     for (const doc of documents) {
       const key = doc.key || doc.chNfse;
@@ -139,9 +108,7 @@ async function runCapture(job) {
       } catch {}
     }
 
-    await fs.writeFile(path.join(basePath, 'manifest.json'), JSON.stringify({
-      updatedAt: new Date().toISOString(), cnpj: cfg.cnpj, competence: period, status: 'completed', mode: 'online', downloaded: { xml: totalXml, pdf: totalPdf }
-    }, null, 2));
+    await fs.writeFile(path.join(basePath, 'manifest.json'), JSON.stringify({ updatedAt: new Date().toISOString(), cnpj: cfg.cnpj, competence: period, status: 'completed', mode: 'online', downloaded: { xml: totalXml, pdf: totalPdf } }, null, 2));
   }
 
   return { periods, xml: totalXml, pdf: totalPdf, mode: 'online' };
@@ -149,11 +116,8 @@ async function runCapture(job) {
 
 app.get('/', (_, res) => res.json({ name: 'nfse-agent', version: AGENT_VERSION }));
 app.get('/health', (_, res) => res.json({ status: 'ok', version: AGENT_VERSION }));
-app.get('/certificates', async (_, res) => {
-  try { res.json(await listWindowsCertificates()); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.get('/jobs/:id', (req, res) => res.json(jobs.get(req.params.id) || { error: 'job não encontrado' }));
+app.get('/certificates', async (_, res) => { try { res.json(await listWindowsCertificates()); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/jobs/:id', (req, res) => { const job = jobs.get(req.params.id); if (!job) return res.status(404).json({ error: 'job não encontrado' }); res.json(job); });
 
 app.post('/capture', (req, res) => {
   const errors = validateCaptureInput(req.body);
@@ -164,6 +128,7 @@ app.post('/capture', (req, res) => {
     id: jobId,
     status: 'queued',
     createdAt: new Date().toISOString(),
+    progress: null,
     config: {
       cnpj: req.body.cnpj,
       periodStart: req.body.periodStart,

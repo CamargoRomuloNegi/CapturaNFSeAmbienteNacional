@@ -1,16 +1,16 @@
 # Captura NFS-e Ambiente Nacional
 
-## Como usar (modo simples)
+## Como usar (modo operacional)
 1. Inicie o agent e web.
-2. Clique em **Ler certificados** para listar A1 da Windows Store.
-3. Se disponível, o CNPJ é preenchido automaticamente.
+2. Clique em **Ler certificados**.
+3. Se disponível, o CNPJ será preenchido automaticamente.
 4. Digite a senha do certificado.
-5. Informe período inicial/final e clique em **Iniciar download**.
+5. Informe `certFilePath` (.pfx/.p12), período inicial/final e clique em **Iniciar download**.
+6. Acompanhe o status em tela (`queued`, `running`, `completed`, `failed`).
 
-## Observações importantes
-- Para chamadas reais mTLS, informe `certFilePath` (`.pfx/.p12`) e configure `NFSE_BASE_URL`.
-- Sem `NFSE_BASE_URL` ou sem `certFilePath`, o sistema executa em modo local seguro (gera pastas/manifest para validação do fluxo).
-- O sistema aplica intervalo mínimo entre chamadas para evitar excesso de requisições.
+## Erros importantes
+- Se `NFSE_BASE_URL` não estiver definida, o job falhará com erro explícito.
+- Se senha/certificado estiver incorreto, o job retorna erro de validação do certificado.
 
 ## Variáveis de ambiente
 ```bash
