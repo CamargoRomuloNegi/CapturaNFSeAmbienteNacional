@@ -11,6 +11,7 @@ const defaultConfig = {
   periodEnd: '',
   outputRoot: './downloads',
   certFilePath: '',
+  certificateId: '',
   certPassword: ''
 };
 
@@ -21,62 +22,83 @@ export default function Page() {
 
   const update = (field, value) => setConfig((prev) => ({ ...prev, [field]: value }));
 
-  const loadCertificates = async () => {
-    const res = await fetch(`${config.agentUrl}/certificates`);
+  const call = async (url, options) => {
+    const res = await fetch(url, options);
     const json = await res.json();
-    setCertificates(json.certificates || []);
-    setOutput(JSON.stringify(json, null, 2));
+    if (!res.ok) throw new Error(JSON.stringify(json));
+    return json;
   };
 
-  useEffect(() => {
-    loadCertificates();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const loadCertificates = async () => {
+    try {
+      const json = await call(`${config.agentUrl}/certificates`);
+      const certs = json.certificates || [];
+      setCertificates(certs);
+      if (certs[0]) {
+        update('certificateId', certs[0].id);
+        if (certs[0].cnpj) update('cnpj', certs[0].cnpj);
+      }
+      setOutput(JSON.stringify(json, null, 2));
+    } catch (error) {
+      setOutput(error.message);
+    }
+  };
+
+  useEffect(() => { loadCertificates(); }, []);
+
+  const onCertificateChange = (id) => {
+    update('certificateId', id);
+    const selected = certificates.find((c) => c.id === id);
+    if (selected?.cnpj) update('cnpj', selected.cnpj);
+  };
 
   const testAgent = async () => {
-    const res = await fetch(`${config.agentUrl}/health`);
-    setOutput(JSON.stringify(await res.json(), null, 2));
+    try { setOutput(JSON.stringify(await call(`${config.agentUrl}/health`), null, 2)); }
+    catch (error) { setOutput(error.message); }
   };
 
   const startCapture = async () => {
-    const res = await fetch(`${config.agentUrl}/capture`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config)
-    });
-    setOutput(JSON.stringify(await res.json(), null, 2));
+    try {
+      const payload = { ...config };
+      setOutput(JSON.stringify(await call(`${config.agentUrl}/capture`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }), null, 2));
+    } catch (error) {
+      setOutput(error.message);
+    }
   };
 
   return (
-    <main style={{ maxWidth: 980, margin: '32px auto', fontFamily: 'Inter, Arial, sans-serif', color: '#111827' }}>
+    <main style={{ maxWidth: 980, margin: '32px auto', fontFamily: 'Inter, Arial, sans-serif' }}>
       <h1>Captura NFS-e Nacional</h1>
-      <p>Modo seguro: prioriza intervalos entre chamadas e execução assíncrona por job.</p>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="Agent URL" value={config.agentUrl} onChange={(v) => update('agentUrl', v)} />
-        <Field label="CNPJ (14 dígitos)" value={config.cnpj} onChange={(v) => update('cnpj', v)} />
+
+        <div>
+          <label style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>Certificado detectado</label>
+          <select value={config.certificateId} onChange={(e) => onCertificateChange(e.target.value)} style={{ width: '100%', padding: 10 }}>
+            <option value="">Selecione</option>
+            {certificates.map((cert) => <option key={cert.id} value={cert.id}>{cert.owner} - {cert.id}</option>)}
+          </select>
+        </div>
+
+        <Field label="CNPJ (auto do certificado, se disponível)" value={config.cnpj} onChange={(v) => update('cnpj', v)} />
+        <Field label="Senha do certificado" value={config.certPassword} onChange={(v) => update('certPassword', v)} type="password" />
+
         <Field label="Período inicial (MM-AAAA)" value={config.periodStart} onChange={(v) => update('periodStart', v)} />
         <Field label="Período final (MM-AAAA)" value={config.periodEnd} onChange={(v) => update('periodEnd', v)} />
         <Field label="Pasta de saída" value={config.outputRoot} onChange={(v) => update('outputRoot', v)} />
         <Field label="Timeout (s)" value={config.timeoutSeconds} onChange={(v) => update('timeoutSeconds', Number(v))} />
-        <Field label="Intervalo mínimo entre chamadas (ms)" value={config.minRequestIntervalMs} onChange={(v) => update('minRequestIntervalMs', Number(v))} />
-        <Field label="Arquivo certificado A1 (.pfx/.p12)" value={config.certFilePath} onChange={(v) => update('certFilePath', v)} />
-        <Field label="Senha do certificado" value={config.certPassword} onChange={(v) => update('certPassword', v)} type="password" />
+        <Field label="Intervalo mínimo (ms)" value={config.minRequestIntervalMs} onChange={(v) => update('minRequestIntervalMs', Number(v))} />
+        <Field label="Arquivo certificado (.pfx/.p12) (opcional)" value={config.certFilePath} onChange={(v) => update('certFilePath', v)} />
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-        <button onClick={loadCertificates}>Atualizar certificados do Windows</button>
+        <button onClick={loadCertificates}>Ler certificados</button>
         <button onClick={testAgent}>Testar agente</button>
-        <button onClick={startCapture}>Iniciar captura</button>
+        <button onClick={startCapture}>Iniciar download</button>
       </div>
 
-      <h3 style={{ marginTop: 20 }}>Certificados detectados</h3>
-      <pre style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
-        {JSON.stringify(certificates, null, 2)}
-      </pre>
-
-      <h3>Retorno</h3>
-      <pre style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>{output}</pre>
+      <pre style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, marginTop: 20 }}>{output}</pre>
     </main>
   );
 }
@@ -85,7 +107,7 @@ function Field({ label, value, onChange, type = 'text' }) {
   return (
     <div>
       <label style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>{label}</label>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} style={{ width: '100%', padding: 10, border: '1px solid #d1d5db', borderRadius: 8 }} />
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} style={{ width: '100%', padding: 10 }} />
     </div>
   );
 }
