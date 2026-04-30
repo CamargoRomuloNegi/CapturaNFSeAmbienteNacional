@@ -1,21 +1,35 @@
 # Captura NFS-e Ambiente Nacional
 
-Monorepo inicial para captura de XML/PDF da NFS-e com foco em escritórios contábeis.
-
-## Estrutura
-
-- `apps/web`: interface web (Next.js) para configuração e monitoramento.
-- `apps/agent`: agente local Node.js responsável por certificado, consulta e download local.
-- `docs/`: arquitetura, backlog e decisões técnicas.
+Monorepo para captura de XML/PDF da NFS-e com foco em escritórios contábeis.
 
 ## Pré-requisitos
-
 - Node.js 20+
 - npm 10+
 
-## Como iniciar (Windows, Linux e macOS)
+## Configuração de ambiente (Agent)
 
-> **Importante:** execute os comandos na pasta raiz do projeto (onde está este `README.MD` e o `package.json` raiz).
+Crie variáveis no terminal antes de iniciar o agent:
+
+```bash
+# URL base da API nacional (exemplo; ajuste conforme documentação oficial/homologação)
+export NFSE_BASE_URL="https://api.nfse.gov.br"
+
+# Intervalo mínimo entre chamadas para evitar sobrecarga/rate limit
+export NFSE_MIN_INTERVAL_MS=1500
+
+# Tamanho de página de consulta (conservador)
+export NFSE_PAGE_SIZE=50
+```
+
+No Windows PowerShell:
+
+```powershell
+$env:NFSE_BASE_URL="https://api.nfse.gov.br"
+$env:NFSE_MIN_INTERVAL_MS="1500"
+$env:NFSE_PAGE_SIZE="50"
+```
+
+## Como iniciar
 
 ```bash
 npm install
@@ -23,52 +37,7 @@ npm run dev:agent
 npm run dev:web
 ```
 
-A interface web usa o endpoint local do agente (`http://localhost:3333`).
-
-## Solução de problemas
-
-### Erro `Missing script: "dev:agent"` ou `"dev:web"`
-
-Você está em uma pasta sem o `package.json` correto.
-
-1. Entre na raiz do projeto:
-   ```bash
-   cd /caminho/para/CapturaNFSeAmbienteNacional
-   ```
-2. Confira os scripts disponíveis:
-   ```bash
-   npm run
-   ```
-3. Rode novamente:
-   ```bash
-   npm run dev:agent
-   npm run dev:web
-   ```
-
-### Executar diretamente por app (alternativa)
-
-Se preferir, rode separado em dois terminais:
-
-**Terminal 1 (agente):**
-```bash
-cd apps/agent
-npm install
-npm run dev
-```
-
-**Terminal 2 (web):**
-```bash
-cd apps/web
-npm install
-npm run dev
-```
-
-### Vulnerabilidades mostradas no `npm install`
-
-O aviso de `npm audit` não impede subir o projeto em modo de desenvolvimento.
-Ainda assim, é recomendado avaliar correções com:
-
-```bash
-npm audit
-npm audit fix
-```
+## Segurança e limites
+- O agent aplica atraso mínimo entre requests (`minRequestIntervalMs`) e retry simples para `429` e `5xx`.
+- Prioriza segurança e estabilidade em vez de velocidade máxima.
+- O certificado A1 usado para mTLS nesta versão é informado por arquivo (`.pfx/.p12`) e senha na tela.
