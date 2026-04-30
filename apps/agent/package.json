@@ -1,0 +1,16 @@
+{
+  "name": "@nfse/agent",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js",
+    "build": "echo 'Agent uses plain Node for now'",
+    "lint": "node --check src/server.js"
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
