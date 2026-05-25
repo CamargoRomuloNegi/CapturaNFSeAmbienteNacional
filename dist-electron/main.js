@@ -11,7 +11,6 @@ import "node:events";
 import "node:stream";
 import crypto$2 from "crypto";
 import fs$1 from "fs";
-import Bottleneck from "bottleneck";
 import util from "util";
 import stream, { Readable } from "stream";
 import path$1, { resolve } from "path";
@@ -73329,10 +73328,8 @@ function saveXmlLocally(cnpj, dateStr, chave, xmlContent) {
 //#endregion
 //#region electron/syncEngine.ts
 var store = new ElectronStore();
-var limiter = new Bottleneck({
-	minTime: 1500,
-	maxConcurrent: 1
-});
+var delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+var API_DELAY_MS = 1500;
 function setupSyncHandlers() {
 	ipcMain.handle("startSync", async (event, dataInicial, dataFinal) => {
 		try {
@@ -73353,7 +73350,7 @@ function setupSyncHandlers() {
 				chave: "35230112345678000199550010000000021123456780",
 				data: (/* @__PURE__ */ new Date()).toISOString()
 			}];
-			for (const nota of mockNotas) await limiter.schedule(async () => {
+			for (const nota of mockNotas) {
 				try {
 					event.sender.send("syncProgress", {
 						status: "running",
@@ -73375,7 +73372,8 @@ function setupSyncHandlers() {
 						message: `Erro na nota ${nota.chave}: ${err.message}`
 					});
 				}
-			});
+				await delay(API_DELAY_MS);
+			}
 			event.sender.send("syncProgress", {
 				status: "completed",
 				message: "Sincronização concluída com sucesso!"

@@ -1,4 +1,3 @@
-import Bottleneck from 'bottleneck';
 import { getActiveCertData } from './certHandlers';
 import { NfseClient } from './nfseClient';
 import { saveXmlLocally } from './fileUtils';
@@ -8,11 +7,11 @@ import { ipcMain } from 'electron';
 
 const store = new Store();
 
-// Limite rigoroso de tempo da API Nacional (ex: max 1 req por 1.5s para segurança de não ser bloqueado)
-const limiter = new Bottleneck({
-  minTime: 1500,
-  maxConcurrent: 1,
-});
+// Utilitário nativo para aguardar N milissegundos sem travar a thread
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Limite rigoroso de tempo da API Nacional (ex: max 1 req por 1.5s)
+const API_DELAY_MS = 1500;
 
 export function setupSyncHandlers() {
   ipcMain.handle('startSync', async (event, dataInicial: string, dataFinal: string) => {
@@ -39,34 +38,33 @@ export function setupSyncHandlers() {
       ];
 
       for (const nota of mockNotas) {
-        // Enfileira obedecendo o throttling (1 req por 1.5s)
-        await limiter.schedule(async () => {
-          try {
-            event.sender.send('syncProgress', { status: 'running', message: `Baixando nota ${nota.chave}...` });
+        try {
+          event.sender.send('syncProgress', { status: 'running', message: `Baixando nota ${nota.chave}...` });
 
-            // Simula download XML
-            // const xml = await client.baixarXmlNota(nota.chave);
-            const mockXml = `<nfse><chave>${nota.chave}</chave><status>Autorizado</status></nfse>`;
+          // Simula download XML (aqui usaria o client.baixarXmlNota)
+          const mockXml = `<nfse><chave>${nota.chave}</chave><status>Autorizado</status></nfse>`;
 
-            // 1. Salvar fisicamente no disco nas pastas organizadas
-            const pathFisico = saveXmlLocally(certData.cnpj!, nota.data, nota.chave, mockXml);
+          // 1. Salvar fisicamente no disco nas pastas organizadas
+          const pathFisico = saveXmlLocally(certData.cnpj!, nota.data, nota.chave, mockXml);
 
-            // 2. Salvar metadados no Supabase
-            const { error } = await supabase.from('notas_fiscais').upsert({
-              id: nota.chave,
-              cnpj_emitente: certData.cnpj,
-              data_emissao: nota.data,
-              status: 'Autorizado',
-              caminho_xml: pathFisico
-            });
+          // 2. Salvar metadados no Supabase
+          const { error } = await supabase.from('notas_fiscais').upsert({
+            id: nota.chave,
+            cnpj_emitente: certData.cnpj,
+            data_emissao: nota.data,
+            status: 'Autorizado',
+            caminho_xml: pathFisico
+          });
 
-            if (error) {
-              console.error('Erro ao salvar no supabase:', error);
-            }
-          } catch (err: any) {
-             event.sender.send('syncProgress', { status: 'error', message: `Erro na nota ${nota.chave}: ${err.message}` });
+          if (error) {
+            console.error('Erro ao salvar no supabase:', error);
           }
-        });
+        } catch (err: any) {
+           event.sender.send('syncProgress', { status: 'error', message: `Erro na nota ${nota.chave}: ${err.message}` });
+        }
+
+        // Aplica o throttling obrigatório da API antes da próxima iteração
+        await delay(API_DELAY_MS);
       }
 
       const finalMsg = 'Sincronização concluída com sucesso!';
