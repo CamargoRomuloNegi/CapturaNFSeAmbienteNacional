@@ -48,9 +48,11 @@ export function setupDatabaseHandlers() {
       const supabase = createClient(url, key);
       const { error } = await supabase.from('empresas').select('cnpj').limit(1);
 
-      // Se o erro for 42P01 ou PGRST116 (cache schema miss do postgREST),
-      // significa que a conexão autenticou, mas a tabela ainda não existe.
-      if (error && error.code !== '42P01' && error.code !== 'PGRST116') {
+      // Como o Supabase na web as vezes traduz o erro de tabela inexistente de formas
+      // variáveis dependendo da versão do postgREST (42P01, PGRST116 ou PGRST204),
+      // e como chaves inválidas dariam throw em erro JWT 401 muito antes,
+      // nós podemos ignorar erros de 'Could not find the table' textuais de forma direta.
+      if (error && error.code !== '42P01' && error.code !== 'PGRST116' && !error.message?.includes('Could not find the table')) {
         throw new Error(`Falha de permissão ou chave incorreta: ${error.message}`);
       }
 

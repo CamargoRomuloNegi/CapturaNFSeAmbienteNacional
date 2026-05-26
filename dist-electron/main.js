@@ -14,7 +14,7 @@ function h() {
 	r.handle("setupSupabase", async (e, t, n) => {
 		try {
 			let { error: e } = await o(t, n).from("empresas").select("cnpj").limit(1);
-			if (e && e.code !== "42P01" && e.code !== "PGRST116") throw Error(`Falha de permissão ou chave incorreta: ${e.message}`);
+			if (e && e.code !== "42P01" && e.code !== "PGRST116" && !e.message?.includes("Could not find the table")) throw Error(`Falha de permissão ou chave incorreta: ${e.message}`);
 			return p.set("supabaseUrl", t), p.set("supabaseKey", n), {
 				success: !0,
 				message: "Conectado com sucesso!",
