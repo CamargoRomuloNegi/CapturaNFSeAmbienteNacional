@@ -48,8 +48,9 @@ export function setupDatabaseHandlers() {
       const supabase = createClient(url, key);
       const { error } = await supabase.from('empresas').select('cnpj').limit(1);
 
-      // Se o erro for 42P01 significa que as credenciais estão corretas, mas a tabela ainda não existe.
-      if (error && error.code !== '42P01') {
+      // Se o erro for 42P01 ou PGRST116 (cache schema miss do postgREST),
+      // significa que a conexão autenticou, mas a tabela ainda não existe.
+      if (error && error.code !== '42P01' && error.code !== 'PGRST116') {
         throw new Error(`Falha de permissão ou chave incorreta: ${error.message}`);
       }
 
